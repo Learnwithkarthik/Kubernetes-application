@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-health-check
+  namespace: student-portal
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: check
+        image: postgres:16-alpine
+        env:
+        - name: PGPASSWORD
+          valueFrom: {secretKeyRef: {name: portal-secret, key: POSTGRES_PASSWORD}}
+        command: [sh, -c, "pg_isready -h postgres -U portaluser -d studentportal"]

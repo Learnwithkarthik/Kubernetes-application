@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portal-config
+  namespace: student-portal
+data:
+  POSTGRES_DB: studentportal
+  POSTGRES_USER: portaluser
+  USER_SERVICE_URL: http://user-service:8000
+  COURSE_SERVICE_URL: http://course-service:8000

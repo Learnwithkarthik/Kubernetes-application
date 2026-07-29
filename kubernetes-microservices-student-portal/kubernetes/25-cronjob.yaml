@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: enrollment-report
+  namespace: student-portal
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: report
+            image: postgres:16-alpine
+            env:
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: portal-secret, key: POSTGRES_PASSWORD}}
+            command: [sh, -c, "psql -h postgres -U portaluser -d studentportal -c 'SELECT COUNT(*) AS total_enrollments FROM enrollments;'"]

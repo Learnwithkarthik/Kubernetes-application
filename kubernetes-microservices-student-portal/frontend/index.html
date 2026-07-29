@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SkillOps Student Portal</title><link rel="stylesheet" href="/styles.css"></head><body>
+<header><h1>SkillOps Student Portal</h1><p>Kubernetes Microservices Demo</p></header>
+<main>
+<section><h2>Register Student</h2><form id="student-form"><input id="student-name" placeholder="Name" required><input id="student-email" type="email" placeholder="Email" required><button>Register</button></form><pre id="student-result"></pre></section>
+<section><h2>Create Course</h2><form id="course-form"><input id="course-title" placeholder="Course title" required><input id="course-description" placeholder="Description" required><button>Create</button></form><pre id="course-result"></pre></section>
+<section><h2>Enroll Student</h2><form id="enrollment-form"><input id="enrollment-user-id" type="number" placeholder="Student ID" required><input id="enrollment-course-id" type="number" placeholder="Course ID" required><button>Enroll</button></form><pre id="enrollment-result"></pre></section>
+<section><h2>Students <button onclick="loadStudents()">Refresh</button></h2><pre id="students-output"></pre></section>
+<section><h2>Courses <button onclick="loadCourses()">Refresh</button></h2><pre id="courses-output"></pre></section>
+<section><h2>Enrollments <button onclick="loadEnrollments()">Refresh</button></h2><pre id="enrollments-output"></pre></section>
+</main><script src="/app.js"></script></body></html>
