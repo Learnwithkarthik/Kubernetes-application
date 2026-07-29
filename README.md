@@ -52,4 +52,13 @@ docker exec -it postgres psql \
 
 SELECT * FROM users;
 
-  
+
+namespaces:
+| Namespace         | Why it exists                                            | What normally runs there                                             | Should you deploy your app there? |
+| ----------------- | -------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------- |
+| `default`         | General-purpose default namespace                        | Any Pod/Deployment created without specifying a namespace            | Only for quick testing            |
+| `kube-system`     | Kubernetes internal system components                    | API server, scheduler, controller manager, etcd, CoreDNS, kube-proxy | No                                |
+| `kube-flannel`    | Flannel CNI networking components                        | Flannel Pods that create Pod-to-Pod networking across nodes          | No                                |
+| `kube-node-lease` | Node heartbeat information                               | Lease objects for control-plane and worker nodes                     | No                                |
+| `kube-public`     | Limited cluster information that can be broadly readable | Usually `cluster-info` ConfigMap                                     | No                                |
+
