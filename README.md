@@ -44,6 +44,12 @@ docker run -d \
 
 
   
+docker exec -it postgres psql \
+  -U portaluser \
+  -d studentportal
 
+\dt
+
+SELECT * FROM users;
 
   
