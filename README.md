@@ -71,3 +71,25 @@ namespaces:
 | `kube-node-lease` | Node heartbeat information                               | Lease objects for control-plane and worker nodes                     | No                                |
 | `kube-public`     | Limited cluster information that can be broadly readable | Usually `cluster-info` ConfigMap                                     | No                                |
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+port forwarding for exposing:
+
+
+kubectl port-forward \
+  --address 0.0.0.0 \
+  service/frontend-service \
+  8080:80
+
