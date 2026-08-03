@@ -22,6 +22,15 @@ docker run -d \
   user-service:v1
 
 
+
+Port forwarding for exposing service:
+
+kubectl port-forward \
+  --address 0.0.0.0 \
+  service/frontend-service \
+  8080:80
+
+
 docker run -d \
   --name course-service \
   --network student-portal-network \
