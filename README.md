@@ -93,3 +93,8 @@ kubectl port-forward \
   service/frontend-service \
   8080:80
 
+kubectl exec -it course-service-689b8f7f67-mzk99 -- sh
+
+getent hosts postgres
+
+python -c "import socket; print(socket.gethostbyname('postgres'))"
