@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: frontend
+  
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: frontend
+
+  template:
+    metadata:
+      labels:
+        app: frontend
+
+    spec:
+      containers:
+        - name: frontend-container
+          image: karthikeya91103/portal:frontend-v1
+          ports:
+            - name: http
+              protocol: TCP
+              containerPort: 80
+

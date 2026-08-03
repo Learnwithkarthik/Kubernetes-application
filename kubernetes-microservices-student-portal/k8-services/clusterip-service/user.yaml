@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: course-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: course-service
+
+  template:
+    metadata:
+      labels:
+        app: course-service
+    spec:
+      containers:
+        - name: course-service-container
+          image: karthikeya91103/portal:course-service-v2
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
