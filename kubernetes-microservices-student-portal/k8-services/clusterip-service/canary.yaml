@@ -16,4 +16,5 @@ spec:
 
     - destination:
         host: user-service
-        subset: v
+        subset: v1
+       weight: 10
