@@ -98,3 +98,39 @@ kubectl exec -it course-service-689b8f7f67-mzk99 -- sh
 getent hosts postgres
 
 python -c "import socket; print(socket.gethostbyname('postgres'))"
+
+
+
+kubectl label namespace default \
+  istio.io/rev=asm-managed \
+  --overwrite
+
+
+kubectl rollout restart deployment frontend
+kubectl rollout restart deployment user-service
+kubectl rollout restart deployment course-service
+kubectl rollout restart deployment enrollment-service
+kubectl rollout restart deployment postgress
+
+
+kubectl get pod <FRONTEND-POD-NAME> \
+  -o jsonpath='{.spec.containers[*].name}'
+
+
+cat <<EOF > mtls.yaml
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: default
+spec:
+  mtls:
+    mode: STRICT
+EOF
+
+
+kubectl port-forward service/frontend-service 8080:80
+
+
+
+
