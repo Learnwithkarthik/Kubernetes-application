@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service-v2
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: user-service
+      version: v2
+
+  template:
+    metadata:
+      labels:
+        app: user-service
+        version: v2
+
+    spec:
+      containers:
+      - name: user-service
+        image: karthikeya91103/portal:user-service-v2
+        ports:
+        - containerPort: 8000
