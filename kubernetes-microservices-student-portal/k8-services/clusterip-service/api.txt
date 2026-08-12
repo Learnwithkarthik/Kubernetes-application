@@ -1,0 +1,1016 @@
+# GKE API Gateway Demo - End-to-End
+
+This document explains the complete process to expose a GKE application through Google Cloud API Gateway and demonstrate API key validation.
+
+Architecture:
+
+Client
+→ API Gateway
+→ API Key Validation
+→ Cloud Run Proxy
+→ GKE Ingress / Load Balancer
+→ Kubernetes Service
+→ Application Pod
+
+---
+
+## 1. Verify the GKE Application
+
+Check pods:
+
+```bash
+kubectl get pods
+```
+
+Check services:
+
+```bash
+kubectl get svc
+```
+
+Check Ingress:
+
+```bash
+kubectl get ingress
+```
+
+Example Ingress IP:
+
+```text
+8.233.43.127
+```
+
+Test the backend APIs directly:
+
+```bash
+curl -i http://8.233.43.127/users
+```
+
+```bash
+curl -i http://8.233.43.127/courses
+```
+
+```bash
+curl -i http://8.233.43.127/enrollments
+```
+
+All endpoints should work before implementing API Gateway.
+
+---
+
+## 2. Enable Required Google Cloud APIs
+
+Run:
+
+```bash
+gcloud services enable \
+  apigateway.googleapis.com \
+  servicemanagement.googleapis.com \
+  servicecontrol.googleapis.com
+```
+
+Expected:
+
+```text
+Operation finished successfully.
+```
+
+---
+
+## 3. Create the API Gateway API Resource
+
+Create the logical API:
+
+```bash
+gcloud api-gateway apis create student-portal-api
+```
+
+Verify:
+
+```bash
+gcloud api-gateway apis list
+```
+
+The API resource does not yet create a public endpoint.
+
+It acts as the parent object for:
+
+```text
+API
+  |
+  +-- API Config
+  |
+  +-- Gateway
+```
+
+---
+
+## 4. Why We Cannot Use the Ingress IP Directly
+
+Initially, using this in `x-google-backend`:
+
+```yaml
+address: http://8.233.43.127/users
+```
+
+results in an error similar to:
+
+```text
+Backend URL is forbidden:
+cannot route requests by IP Address
+```
+
+API Gateway requires a hostname-based backend.
+
+Because no custom DNS is being used in this demo, we create a small Cloud Run proxy.
+
+Architecture becomes:
+
+```text
+API Gateway
+     |
+     v
+Cloud Run Proxy
+     |
+     v
+GKE Ingress IP
+     |
+     v
+GKE Services
+```
+
+---
+
+## 5. Create the Cloud Run Proxy
+
+Create a directory:
+
+```bash
+mkdir api-proxy
+cd api-proxy
+```
+
+Create:
+
+```bash
+vi app.py
+```
+
+Add:
+
+```python
+from flask import Flask, request, Response
+import requests
+import os
+
+app = Flask(__name__)
+
+BACKEND = "http://8.233.43.127"
+
+@app.route("/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@app.route("/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+def proxy(path):
+
+    url = f"{BACKEND}/{path}"
+
+    response = requests.request(
+        method=request.method,
+        url=url,
+        headers={
+            key: value
+            for key, value in request.headers
+            if key.lower() != "host"
+        },
+        data=request.get_data(),
+        params=request.args,
+        timeout=30
+    )
+
+    excluded_headers = [
+        "content-encoding",
+        "content-length",
+        "transfer-encoding",
+        "connection"
+    ]
+
+    headers = [
+        (key, value)
+        for key, value in response.headers.items()
+        if key.lower() not in excluded_headers
+    ]
+
+    return Response(
+        response.content,
+        response.status_code,
+        headers
+    )
+
+
+if __name__ == "__main__":
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080))
+    )
+```
+
+---
+
+## 6. Create requirements.txt
+
+```bash
+vi requirements.txt
+```
+
+Add:
+
+```text
+Flask==3.0.3
+gunicorn==22.0.0
+requests==2.32.3
+```
+
+---
+
+## 7. Create Dockerfile
+
+```bash
+vi Dockerfile
+```
+
+Add:
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app.py .
+
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 app:app
+```
+
+There is no need to manually build or push the container image.
+
+Cloud Run source deployment automatically uses Cloud Build to create the image.
+
+---
+
+## 8. Enable Cloud Run APIs
+
+Run:
+
+```bash
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com
+```
+
+---
+
+## 9. Deploy the Proxy to Cloud Run
+
+From inside the `api-proxy` directory:
+
+```bash
+gcloud run deploy student-portal-proxy \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+During deployment:
+
+```text
+Source Code
+   |
+   v
+Cloud Build
+   |
+   v
+Container Image
+   |
+   v
+Artifact Registry
+   |
+   v
+Cloud Run
+```
+
+Get the Cloud Run URL:
+
+```bash
+gcloud run services describe student-portal-proxy \
+  --region us-central1 \
+  --format='value(status.url)'
+```
+
+Example:
+
+```text
+https://student-portal-proxy-xxxxxx-uc.a.run.app
+```
+
+---
+
+## 10. Test the Cloud Run Proxy
+
+Test:
+
+```bash
+curl https://student-portal-proxy-xxxxxx-uc.a.run.app/users
+```
+
+Also:
+
+```bash
+curl https://student-portal-proxy-xxxxxx-uc.a.run.app/courses
+```
+
+```bash
+curl https://student-portal-proxy-xxxxxx-uc.a.run.app/enrollments
+```
+
+The response should match the response returned by the GKE Ingress.
+
+For example:
+
+```text
+[]
+```
+
+is a valid response if no records currently exist.
+
+---
+
+## 11. Create API Gateway OpenAPI Configuration Without API Key
+
+Return to your working directory.
+
+Create:
+
+```bash
+vi openapi-no-key.yaml
+```
+
+Add:
+
+```yaml
+swagger: "2.0"
+
+info:
+  title: student-portal-api
+  description: Student Portal API Gateway Demo
+  version: "1.0.0"
+
+schemes:
+- https
+
+produces:
+- application/json
+
+paths:
+
+  /users:
+    get:
+      operationId: getUsers
+      x-google-backend:
+        address: https://student-portal-proxy-xxxxxx-uc.a.run.app/users
+      responses:
+        "200":
+          description: Success
+
+  /courses:
+    get:
+      operationId: getCourses
+      x-google-backend:
+        address: https://student-portal-proxy-xxxxxx-uc.a.run.app/courses
+      responses:
+        "200":
+          description: Success
+
+  /enrollments:
+    get:
+      operationId: getEnrollments
+      x-google-backend:
+        address: https://student-portal-proxy-xxxxxx-uc.a.run.app/enrollments
+      responses:
+        "200":
+          description: Success
+```
+
+Replace the Cloud Run URL with your actual URL.
+
+---
+
+## 12. Create API Config Version 1
+
+Run:
+
+```bash
+gcloud api-gateway api-configs create student-portal-config-v1 \
+  --api=student-portal-api \
+  --openapi-spec=openapi-no-key.yaml \
+  --project=learn-gcp-502008
+```
+
+Verify:
+
+```bash
+gcloud api-gateway api-configs list \
+  --api=student-portal-api
+```
+
+---
+
+## 13. Create the API Gateway
+
+Run:
+
+```bash
+gcloud api-gateway gateways create student-portal-gateway \
+  --api=student-portal-api \
+  --api-config=student-portal-config-v1 \
+  --location=us-central1 \
+  --project=learn-gcp-502008
+```
+
+Verify:
+
+```bash
+gcloud api-gateway gateways list
+```
+
+Expected state:
+
+```text
+ACTIVE
+```
+
+---
+
+## 14. Get the Public Gateway Hostname
+
+Do not use:
+
+```text
+student-portal-gateway
+```
+
+as the URL.
+
+It is only the Gateway resource name.
+
+Get the actual hostname:
+
+```bash
+gcloud api-gateway gateways describe student-portal-gateway \
+  --location=us-central1 \
+  --format='value(defaultHostname)'
+```
+
+Store it:
+
+```bash
+export GATEWAY_HOST=$(gcloud api-gateway gateways describe \
+  student-portal-gateway \
+  --location=us-central1 \
+  --format='value(defaultHostname)')
+```
+
+Verify:
+
+```bash
+echo "$GATEWAY_HOST"
+```
+
+Example:
+
+```text
+student-portal-gateway-xxxxxx.uc.gateway.dev
+```
+
+---
+
+## 15. Test API Gateway Without API Key
+
+Run:
+
+```bash
+curl -i "https://$GATEWAY_HOST/users"
+```
+
+Also:
+
+```bash
+curl -i "https://$GATEWAY_HOST/courses"
+```
+
+```bash
+curl -i "https://$GATEWAY_HOST/enrollments"
+```
+
+At this stage no API-key security exists.
+
+Therefore:
+
+```text
+No API Key
+    |
+    v
+API Gateway
+    |
+    v
+Allowed
+```
+
+This proves basic API Gateway routing.
+
+---
+
+# API KEY VALIDATION DEMO
+
+## 16. Get the Managed Service Name
+
+Run:
+
+```bash
+gcloud api-gateway apis describe student-portal-api
+```
+
+Or:
+
+```bash
+export MANAGED_SERVICE=$(gcloud api-gateway apis describe \
+  student-portal-api \
+  --format='value(managedService)')
+```
+
+Verify:
+
+```bash
+echo "$MANAGED_SERVICE"
+```
+
+Enable it:
+
+```bash
+gcloud services enable "$MANAGED_SERVICE"
+```
+
+---
+
+## 17. Create an API Key
+
+Go to:
+
+```text
+Google Cloud Console
+        |
+        v
+APIs & Services
+        |
+        v
+Credentials
+        |
+        v
+Create Credentials
+        |
+        v
+API Key
+```
+
+For the initial demo, the key can be created without API restrictions.
+
+Do not expose or commit the real key to GitHub.
+
+Store it temporarily in Cloud Shell:
+
+```bash
+export API_KEY='YOUR_REAL_API_KEY'
+```
+
+Verify that it is loaded without printing it:
+
+```bash
+test -n "$API_KEY" && echo "API key loaded"
+```
+
+---
+
+## 18. Create OpenAPI Configuration With API Key Enforcement
+
+Create:
+
+```bash
+vi openapi-api-key.yaml
+```
+
+Add:
+
+```yaml
+swagger: "2.0"
+
+info:
+  title: student-portal-api
+  description: Student Portal API Gateway Demo With API Key
+  version: "2.0.0"
+
+schemes:
+- https
+
+securityDefinitions:
+  api_key:
+    type: apiKey
+    name: key
+    in: query
+
+security:
+- api_key: []
+
+paths:
+
+  /users:
+    get:
+      operationId: getUsersWithKey
+      x-google-backend:
+        address: https://student-portal-proxy-xxxxxx-uc.a.run.app/users
+      responses:
+        "200":
+          description: Success
+
+  /courses:
+    get:
+      operationId: getCoursesWithKey
+      x-google-backend:
+        address: https://student-portal-proxy-xxxxxx-uc.a.run.app/courses
+      responses:
+        "200":
+          description: Success
+
+  /enrollments:
+    get:
+      operationId: getEnrollmentsWithKey
+      x-google-backend:
+        address: https://student-portal-proxy-xxxxxx-uc.a.run.app/enrollments
+      responses:
+        "200":
+          description: Success
+```
+
+Important sections:
+
+```yaml
+securityDefinitions:
+  api_key:
+    type: apiKey
+    name: key
+    in: query
+```
+
+and:
+
+```yaml
+security:
+- api_key: []
+```
+
+These tell API Gateway that an API key must be supplied.
+
+---
+
+## 19. Create API Config Version 2
+
+Run:
+
+```bash
+gcloud api-gateway api-configs create student-portal-config-v2 \
+  --api=student-portal-api \
+  --openapi-spec=openapi-api-key.yaml \
+  --project=learn-gcp-502008
+```
+
+Verify:
+
+```bash
+gcloud api-gateway api-configs list \
+  --api=student-portal-api
+```
+
+Expected:
+
+```text
+student-portal-config-v1
+student-portal-config-v2
+```
+
+---
+
+## 20. Update the Existing Gateway to Version 2
+
+Run:
+
+```bash
+gcloud api-gateway gateways update student-portal-gateway \
+  --api=student-portal-api \
+  --api-config=student-portal-config-v2 \
+  --location=us-central1 \
+  --project=learn-gcp-502008
+```
+
+Check:
+
+```bash
+gcloud api-gateway gateways describe student-portal-gateway \
+  --location=us-central1 \
+  --format='value(state)'
+```
+
+Expected:
+
+```text
+ACTIVE
+```
+
+---
+
+# FINAL API KEY TEST
+
+## 21. Test Without API Key
+
+Run:
+
+```bash
+curl -i "https://$GATEWAY_HOST/users"
+```
+
+Expected:
+
+```text
+BLOCKED
+```
+
+Flow:
+
+```text
+Client
+   |
+   | No key
+   v
+API Gateway
+   |
+   X
+Rejected
+```
+
+---
+
+## 22. Test With Wrong API Key
+
+Run:
+
+```bash
+curl -i "https://$GATEWAY_HOST/users?key=WRONG_KEY"
+```
+
+Expected:
+
+```text
+BLOCKED
+```
+
+This proves that API Gateway does not accept any random string.
+
+---
+
+## 23. Test With Correct API Key
+
+Run:
+
+```bash
+curl -i "https://$GATEWAY_HOST/users?key=$API_KEY"
+```
+
+Expected:
+
+```text
+HTTP 200
+```
+
+and the backend response.
+
+Also test:
+
+```bash
+curl -i "https://$GATEWAY_HOST/courses?key=$API_KEY"
+```
+
+```bash
+curl -i "https://$GATEWAY_HOST/enrollments?key=$API_KEY"
+```
+
+---
+
+# Final Architecture
+
+```text
+                    CLIENT
+
+                      |
+                      | GET /users?key=API_KEY
+                      v
+
+                API GATEWAY
+             +----------------+
+             | API Key Check  |
+             +-------+--------+
+                     |
+             Invalid | Valid
+                     |
+              X      v
+            Reject
+
+              Cloud Run Proxy
+                     |
+                     v
+
+              GKE Ingress
+          /       |        \
+         /        |         \
+        v         v          v
+
+   user-service course-service enrollment-service
+
+        |          |              |
+        v          v              v
+
+      Pods        Pods           Pods
+```
+
+---
+
+# Demo Summary
+
+Before API Gateway:
+
+```text
+Client
+   |
+   v
+GKE Ingress
+   |
+   v
+Backend API
+```
+
+With API Gateway but without security:
+
+```text
+Client
+   |
+   v
+API Gateway
+   |
+   v
+Cloud Run Proxy
+   |
+   v
+GKE Ingress
+```
+
+With API Gateway and API-key validation:
+
+```text
+No API Key
+     |
+     v
+BLOCKED
+
+
+Wrong API Key
+     |
+     v
+BLOCKED
+
+
+Correct API Key
+     |
+     v
+API Gateway
+     |
+     v
+Cloud Run Proxy
+     |
+     v
+GKE
+     |
+     v
+SUCCESS
+```
+
+---
+
+# Key Concepts
+
+**API**
+
+A defined contract that allows one software application to communicate with another.
+
+Examples:
+
+```text
+GET /users
+GET /courses
+POST /enrollments
+```
+
+**Ingress**
+
+Routes incoming traffic to Kubernetes Services.
+
+Example:
+
+```text
+/users → user-service
+/courses → course-service
+```
+
+**API Gateway**
+
+Controls how clients consume APIs.
+
+In this demo it provides:
+
+```text
+API routing
+API key validation
+Central API entry point
+```
+
+**Cloud Run Proxy**
+
+Used in this lab because API Gateway could not use the raw GKE Ingress IP directly as an `x-google-backend` address.
+
+---
+
+# Important Security Note
+
+Never commit the real API key to GitHub.
+
+Do not add commands like:
+
+```text
+export API_KEY="REAL_KEY"
+```
+
+with the actual value in your repository.
+
+Use:
+
+```text
+export API_KEY='YOUR_API_KEY'
+```
+
+only as a placeholder in documentation.
+
+API keys are suitable for demonstrating application/API consumer identification, but for real end-user authentication, JWT/OAuth-based authentication is generally more appropriate.
+
+---
+
+# Cleanup
+
+When the demo is finished, remove the Gateway if you no longer need it:
+
+```bash
+gcloud api-gateway gateways delete student-portal-gateway \
+  --location=us-central1
+```
+
+Delete API configs:
+
+```bash
+gcloud api-gateway api-configs delete student-portal-config-v2 \
+  --api=student-portal-api
+
+gcloud api-gateway api-configs delete student-portal-config-v1 \
+  --api=student-portal-api
+```
+
+Delete the API:
+
+```bash
+gcloud api-gateway apis delete student-portal-api
+```
+
+Delete the Cloud Run proxy:
+
+```bash
+gcloud run services delete student-portal-proxy \
+  --region=us-central1
+```
+
+This avoids leaving unnecessary billable resources running.
