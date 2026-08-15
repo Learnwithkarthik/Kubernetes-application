@@ -132,5 +132,7 @@ EOF
 kubectl port-forward service/frontend-service 8080:80
 
 
-
+kubectl exec -it deployment/postgres -- \
+psql -U portaluser -d studentportal \
+-c "SELECT * FROM users;"
 
