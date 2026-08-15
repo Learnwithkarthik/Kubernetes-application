@@ -136,3 +136,9 @@ kubectl exec -it deployment/postgres -- \
 psql -U portaluser -d studentportal \
 -c "SELECT * FROM users;"
 
+
+kubectl create secret generic postgres-secret \
+  --from-literal=username=portaluser \
+  --from-literal=password=portalpass
+
+kubectl get secrets
